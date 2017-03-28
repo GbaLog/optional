@@ -2,6 +2,7 @@
 #define GLIB_VARIANT_HPP
 //-------------------------------------------------------------------
 #include <stdexcept>
+#include <utility>
 //-------------------------------------------------------------------
 namespace glib
 {
@@ -36,10 +37,43 @@ public:
     valid_(false)
   {}
 
-  ~optional()
+  template<typename U>
+  constexpr optional(const U & val)
+    :
+    val_(static_cast<T>(val)),
+    valid_(true)
+  {}
+
+  template<typename U>
+  constexpr optional(U && val)
+    :
+    val_(std::move(static_cast<T>(val))),
+    valid_(true)
+  {}
+
+  template<typename U>
+  optional<T> & operator =(const optional<U> & other)
   {
-    if (std::is_trivially_destructible<T>::value)
-      ;
+    if (other)
+    {
+      valid_ = true;
+      val_ = other.value();
+    }
+
+    return *this;
+  }
+
+  template<typename U>
+  optional<T> & operator =(optional<U> && other)
+  {
+    if (other)
+    {
+      valid_ = true;
+      val_ = std::move(*other);
+      other.valid_ = false;
+    }
+
+    return *this;
   }
 
   constexpr operator bool() const
@@ -105,6 +139,41 @@ public:
   constexpr T && operator *() &&
   {
     return std::move(**this);
+  }
+
+  //TODO
+  template<typename U>
+  void swap(optional<U> & other) noexcept(std::is_nothrow_move_constructible<T>::value && std::is_nothrow_move_constructible<U>::value)
+  {
+    if (!*this && !other)
+      return;
+
+    if (*this && !other)
+    {
+      *other = std::move(**this);
+      valid_ = false;
+      return;
+    }
+
+    if (!*this && other)
+    {
+      *this = std::move(other);
+      other.valid_ = false;
+      return;
+    }
+
+    using std::swap;
+
+    swap(**this, *other);
+  }
+
+  void reset() noexcept
+  {
+    if (valid_)
+    {
+      valid_ = false;
+      value().T::~T();
+    }
   }
 
 private:
