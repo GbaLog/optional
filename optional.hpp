@@ -2,6 +2,7 @@
 #define GLIB_VARIANT_HPP
 //-------------------------------------------------------------------
 #include <stdexcept>
+#include <utility>
 //-------------------------------------------------------------------
 namespace glib
 {
@@ -18,9 +19,6 @@ struct optional_exception : public std::logic_error
 struct InPlaceT {};
 
 constexpr InPlaceT inPlace;
-
-template<typename>
-class optional;
 //-------------------------------------------------------------------
 namespace detail
 {
@@ -165,12 +163,6 @@ private:
 
   bool mEngaged_ = false;
 };
-//-------------------------------------------------------------------
-template<typename> struct is_optional_impl : std::false_type {};
-
-template<typename T__> struct is_optional_impl<optional<T__>> : std::true_type {};
-
-template<typename T__> struct is_optional : public is_optional_impl<std::remove_cv<typename std::remove_reference<T__>::type>> {};
 //-------------------------------------------------------------------
 }
 //-------------------------------------------------------------------
