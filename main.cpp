@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
 {
   std::cout << "Hello World!\n";
 
-  glib::optional<int> opt(321);
+  glib::Optional<int> opt(321);
 
   std::cout << std::move(*opt) << "\n";
 

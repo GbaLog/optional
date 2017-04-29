@@ -1,5 +1,5 @@
-#ifndef GLIB_VARIANT_HPP
-#define GLIB_VARIANT_HPP
+#ifndef GLIB_OPTIONAL_HPP
+#define GLIB_OPTIONAL_HPP
 //-------------------------------------------------------------------
 #include <stdexcept>
 #include <utility>
@@ -9,7 +9,7 @@ namespace glib
 //-------------------------------------------------------------------
 struct optional_exception : public std::logic_error
 {
-  optional_exception() : logic_error("bad optional access") { }
+  optional_exception() : logic_error("Bad optional access") { }
 
   explicit optional_exception(const char* arg) : logic_error(arg) { }
 
@@ -19,6 +19,15 @@ struct optional_exception : public std::logic_error
 struct InPlaceT {};
 
 constexpr InPlaceT inPlace;
+//-------------------------------------------------------------------
+struct NullOptT
+{
+  enum class guard_ { token_ };
+
+  explicit constexpr NullOptT(guard_) {}
+};
+
+constexpr NullOptT nullOpt(NullOptT::guard_::token_);
 //-------------------------------------------------------------------
 namespace detail
 {
@@ -40,6 +49,16 @@ struct and__<T1__, T2__, T3__, Tn__...> :
 template<typename T__>
 struct not__ : public std::integral_constant<bool, !T__::value> {};
 //-------------------------------------------------------------------
+template<typename T__> struct Optional;
+
+template<typename T__> struct isOptionalImpl : std::false_type {};
+
+template<typename T__> struct isOptionalImpl<Optional<T__>> : std::true_type {};
+
+template<typename T__> struct isOptional :
+    public isOptionalImpl<typename std::remove_cv<typename std::remove_reference<T__>::type>::type>
+{};
+//-------------------------------------------------------------------
 template<typename T__>
 class OptionalBase__
 {
@@ -48,6 +67,10 @@ public:
 
   constexpr OptionalBase__() noexcept :
     mEmpty_{}
+  {}
+
+  constexpr OptionalBase__(NullOptT) noexcept :
+    OptionalBase__{}
   {}
 
   constexpr OptionalBase__(const T__ & t_) :
@@ -167,13 +190,22 @@ private:
 }
 //-------------------------------------------------------------------
 template<typename T__>
-class optional : private detail::OptionalBase__<T__>
+class Optional : private detail::OptionalBase__<T__>
 {
+  static_assert(
+    detail::and__<
+      detail::not__<std::is_same<typename std::remove_cv<T__>::type, NullOptT>>,
+      detail::not__<std::is_same<typename std::remove_cv<T__>::type, InPlaceT>>,
+      detail::not__<std::is_reference<T__>>
+    >(),
+    "Invalid type for optional"
+  );
+
   using Base__ = detail::OptionalBase__<T__>;
 public:
   using Base__::Base__;
 
-  constexpr optional() = default;
+  constexpr Optional() = default;
 
   template<typename U__,
            typename std::enable_if<detail::and__<
@@ -181,7 +213,7 @@ public:
              std::is_constructible<T__, U__&&>,
              std::is_convertible<U__&&, T__>
            >::value, bool>::type = true>
-  constexpr optional(U__ && t_) :
+  constexpr Optional(U__ && t_) :
     Base__(T__(std::forward<U__>(t_)))
   {}
 
@@ -191,7 +223,7 @@ public:
              std::is_constructible<T__, U__&&>,
              detail::not__<std::is_convertible<U__&&, T__>>
            >::value, bool>::type = false>
-  explicit constexpr optional(U__ && t_) :
+  explicit constexpr Optional(U__ && t_) :
     Base__(T__(std::forward<U__>(t_)))
   {}
 
@@ -199,49 +231,73 @@ public:
             typename std::enable_if<detail::and__<
               detail::not__<std::is_same<T__, U__>>,
               detail::not__<std::is_constructible<
-                T__, const optional<U__>&>>,
+                T__, const Optional<U__>&>>,
               detail::not__<std::is_convertible<
-                const optional<U__>&, T__>>,
+                const Optional<U__>&, T__>>,
               std::is_constructible<T__, const U__&>,
               std::is_convertible<const U__&, T__>
             >::value, bool>::type = true>
-  constexpr optional(const optional<U__> & t_) :
-    Base__(t_ ? optional<T__>(*t_) : optional<T__>())
+  constexpr Optional(const Optional<U__> & t_) :
+    Base__(t_ ? Optional<T__>(*t_) : Optional<T__>())
   {}
 
   template <typename U__,
             typename std::enable_if<detail::and__<
               detail::not__<std::is_same<T__, U__>>,
               detail::not__<std::is_constructible<
-                 T__, optional<U__>&&>>,
+                 T__, Optional<U__>&&>>,
               detail::not__<std::is_convertible<
-                 optional<U__>&&, T__>>,
+                 Optional<U__>&&, T__>>,
               std::is_constructible<T__, U__&&>,
               std::is_convertible<U__&&, T__>
             >::value, bool>::type = true>
-  constexpr optional(optional<U__> && t_) :
-    Base__(t_ ? optional<T__>(std::move(*t_)) : optional<T__>())
+  constexpr Optional(Optional<U__> && t_) :
+    Base__(t_ ? Optional<T__>(std::move(*t_)) : Optional<T__>())
   {}
 
   template <typename U__,
             typename std::enable_if<detail::and__<
               detail::not__<std::is_same<T__, U__>>,
               detail::not__<std::is_constructible<
-                 T__, optional<U__>&&>>,
+                 T__, Optional<U__>&&>>,
               detail::not__<std::is_convertible<
-                 optional<U__>&&, T__>>,
+                 Optional<U__>&&, T__>>,
               std::is_constructible<T__, U__&&>,
               detail::not__<std::is_convertible<U__&&, T__>>
             >::value, bool>::type = false>
-  explicit constexpr optional(optional<U__> && t_) :
-    Base__(t_ ? optional<T__>(std::move(*t_)) : optional<T__>())
+  explicit constexpr Optional(Optional<U__> && t_) :
+    Base__(t_ ? Optional<T__>(std::move(*t_)) : Optional<T__>())
   {}
+
+  Optional & operator =(NullOptT) noexcept
+  {
+    this->reset__();
+    return *this;
+  }
+
+  template<typename U__,
+           typename std::enable_if<detail::and__<
+             detail::not__<std::is_same<U__, NullOptT>>,
+             detail::not__<detail::isOptional<U__>>
+           >::value,
+           bool>::type = true>
+  Optional & operator =(U__ && u_)
+  {
+    static_assert(
+      detail::and__<
+        std::is_constructible<T__, U__>,
+        std::is_assignable<T__&, U__>
+      >(),
+      "Can't assign to value type from argument"
+    );
+    return *this;
+  }
 
   template<typename U__,
            typename std::enable_if<detail::and__<
              detail::not__<std::is_same<U__, T__>>>::value,
            bool>::type = true>
-  optional & operator =(const optional<U__> & t_)
+  Optional & operator =(const Optional<U__> & t_)
   {
     static_assert(
       detail::and__<
@@ -263,7 +319,7 @@ public:
            typename std::enable_if<detail::and__<
              detail::not__<std::is_same<U__, T__>>>::value,
            bool>::type = true>
-  optional & operator =(optional<U__> && t_)
+  Optional & operator =(Optional<U__> && t_)
   {
     static_assert(
       detail::and__<
@@ -293,7 +349,7 @@ public:
   {
     static_assert(
       std::is_constructible<T__, Args__&&...>(),
-      "can't emplace value type from arguments"
+      "Can't emplace value type from arguments"
     );
 
     this->reset__();
@@ -301,7 +357,7 @@ public:
 
   }
 
-  void swap(optional & other_)
+  void swap(Optional & other_)
   noexcept(std::is_nothrow_move_constructible<T__>() && noexcept(std::swap(std::declval<T__&>(), std::declval<T__&>())))
   {
     using std::swap;
@@ -348,7 +404,7 @@ public:
   const T__ & value() const
   {
     if (!*this)
-      throw optional_exception("attempt to access value of a disengaged optional object");
+      throw optional_exception("Attempt to access value of a disengaged optional object");
 
     return **this;
   }
@@ -356,7 +412,7 @@ public:
   T__ & value()
   {
     if (!*this)
-      throw optional_exception("attempt to access value of a disengaged optional object");
+      throw optional_exception("Attempt to access value of a disengaged optional object");
 
     return **this;
   }
@@ -369,7 +425,7 @@ public:
         std::is_copy_constructible<T__>,
         std::is_convertible<U__&&, T__>
       >(),
-      "cannot return value"
+      "Cannot return value"
     );
 
     return this->isEngaged__() ?
@@ -382,10 +438,10 @@ public:
   {
     static_assert(
       detail::and__<
-        std::is_copy_constructible<T__>,
+        std::is_move_constructible<T__>,
         std::is_convertible<U__&&, T__>
       >(),
-      "cannot return value"
+      "Cannot return value"
     );
 
     return this->isEngaged__() ?
@@ -395,119 +451,191 @@ public:
 };
 //-------------------------------------------------------------------
 template<typename T__>
-constexpr bool operator ==(const optional<T__> & l_, const optional<T__> & r_)
+constexpr bool operator ==(const Optional<T__> & l_, const Optional<T__> & r_)
 {
   return static_cast<bool>(l_) == static_cast<bool>(r_) && (!l_ || *l_ == *r_);
 }
 
 template<typename T__>
-constexpr bool operator !=(const optional<T__> & l_, const optional<T__> & r_)
+constexpr bool operator !=(const Optional<T__> & l_, const Optional<T__> & r_)
 {
   return !(l_ == r_);
 }
 
 template<typename T__>
-constexpr bool operator <(const optional<T__> & l_, const optional<T__> & r_)
+constexpr bool operator <(const Optional<T__> & l_, const Optional<T__> & r_)
 {
   return static_cast<bool>(r_) && (!l_ || *l_ < *r_);
 }
 
 template<typename T__>
-constexpr bool operator >(const optional<T__> & l_, const optional<T__> & r_)
+constexpr bool operator >(const Optional<T__> & l_, const Optional<T__> & r_)
 {
   return (r_ < l_);
 }
 
 template<typename T__>
-constexpr bool operator <=(const optional<T__> & l_, const optional<T__> & r_)
+constexpr bool operator <=(const Optional<T__> & l_, const Optional<T__> & r_)
 {
   return !(r_ < l_);
 }
 
 template<typename T__>
-constexpr bool operator >=(const optional<T__> & l_, const optional<T__> & r_)
+constexpr bool operator >=(const Optional<T__> & l_, const Optional<T__> & r_)
 {
   return !(l_ < r_);
 }
 
 template<typename T__>
-constexpr bool operator ==(const optional<T__> & l_, const T__ & r_)
+constexpr bool operator ==(const Optional<T__> & l_, const T__ & r_)
 {
   return l_ && *l_ == r_;
 }
 
 template<typename T__>
-constexpr bool operator ==(const T__ & l_, const optional<T__> & r_)
+constexpr bool operator ==(const T__ & l_, const Optional<T__> & r_)
 {
   return r_ && l_ == *r_;
 }
 
 template<typename T__>
-constexpr bool operator !=(const optional<T__> & l_, const T__ & r_)
+constexpr bool operator !=(const Optional<T__> & l_, const T__ & r_)
 {
   return !(r_ == l_);
 }
 
 template<typename T__>
-constexpr bool operator !=(const T__ & l_, const optional<T__> & r_)
+constexpr bool operator !=(const T__ & l_, const Optional<T__> & r_)
 {
   return !r_ || !(l_ == *r_);
 }
 
 template<typename T__>
-constexpr bool operator <(const optional<T__> & l_, const T__ & r_)
+constexpr bool operator <(const Optional<T__> & l_, const T__ & r_)
 {
   return l_ && *l_ < r_;
 }
 
 template<typename T__>
-constexpr bool operator <(const T__ & l_, const optional<T__> & r_)
+constexpr bool operator <(const T__ & l_, const Optional<T__> & r_)
 {
   return r_ && l_ < *r_;
 }
 
 template<typename T__>
-constexpr bool operator >(const optional<T__> & l_, const T__ & r_)
+constexpr bool operator >(const Optional<T__> & l_, const T__ & r_)
 {
   return l_ && r_ < *l_;
 }
 
 template<typename T__>
-constexpr bool operator >(const T__ & l_, const optional<T__> & r_)
+constexpr bool operator >(const T__ & l_, const Optional<T__> & r_)
 {
   return !r_ || *r_ < l_;
 }
 
 template<typename T__>
-constexpr bool operator <=(const optional<T__> & l_, const T__ & r_)
+constexpr bool operator <=(const Optional<T__> & l_, const T__ & r_)
 {
   return l_ && !(l_ < r_);
 }
 
 template<typename T__>
-constexpr bool operator <=(const T__ & l_, const optional<T__> & r_)
+constexpr bool operator <=(const T__ & l_, const Optional<T__> & r_)
 {
   return r_ && !(*r_ < l_);
 }
 
 template<typename T__>
-constexpr bool operator >=(const optional<T__> & l_, const T__ & r_)
+constexpr bool operator >=(const Optional<T__> & l_, const T__ & r_)
 {
   return l_ && !(*l_ < r_);
 }
 
 template<typename T__>
-constexpr bool operator >=(const T__ & l_, const optional<T__> & r_)
+constexpr bool operator >=(const T__ & l_, const Optional<T__> & r_)
 {
   return !r_ || !(l_ < *r_);
 }
+
+template<typename T__>
+constexpr bool operator ==(const Optional<T__> & l_, NullOptT)
+{
+  return !l_;
+}
+
+template<typename T__>
+constexpr bool operator ==(NullOptT, const Optional<T__> & r_)
+{
+  return !r_;
+}
+
+template<typename T__>
+constexpr bool operator !=(const Optional<T__> & l_, NullOptT)
+{
+  return static_cast<bool>(l_);
+}
+
+template<typename T__>
+constexpr bool operator !=(NullOptT, const Optional<T__> & r_)
+{
+  return static_cast<bool>(r_);
+}
+
+template<typename T__>
+constexpr bool operator <(const Optional<T__> &, NullOptT)
+{
+  return false;
+}
+
+template<typename T__>
+constexpr bool operator <(NullOptT, const Optional<T__> & r_)
+{
+  return static_cast<bool>(r_);
+}
+
+template<typename T__>
+constexpr bool operator >(const Optional<T__> & l_, NullOptT)
+{
+  return static_cast<bool>(l_);
+}
+
+template<typename T__>
+constexpr bool operator >(NullOptT, const Optional<T__> &)
+{
+  return false;
+}
+
+template<typename T__>
+constexpr bool operator <=(const Optional<T__> & l_, NullOptT)
+{
+  return !l_;
+}
+
+template<typename T__>
+constexpr bool operator <=(NullOptT, const Optional<T__> &)
+{
+  return true;
+}
+
+template<typename T__>
+constexpr bool operator >=(const Optional<T__> &, NullOptT)
+{
+  return true;
+}
+
+template<typename T__>
+constexpr bool operator >=(NullOptT, const Optional<T__> & r_)
+{
+  return !r_;
+}
 //-------------------------------------------------------------------
 template<typename T__, typename ... Args__>
-optional<T__> make_optional(Args__ && ... args_)
+Optional<T__> make_optional(Args__ && ... args_)
 {
-  return optional<typename std::decay<T__>::type>(std::forward<Args__>(args_)...);
+  return Optional<typename std::decay<T__>::type>(std::forward<Args__>(args_)...);
 }
 //-------------------------------------------------------------------
 } // glib
 //-------------------------------------------------------------------
-#endif // GLIB_VARIANT_HPP
+#endif // GLIB_OPTIONAL_HPP
